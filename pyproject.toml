@@ -93,10 +93,10 @@ exclude = ["notebooks"]
 quote-style = "double"
 
 [tool.pytest.ini_options]
-addopts = "-ra --cov=technova_attrition --cov-report=term-missing"
+addopts = "-ra --cov=credexp --cov-report=term-missing"
 testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.bandit]
-targets = ["src/technova_attrition"]
+targets = ["src/credexp"]
 exclude_dirs = [".venv", "tests", "notebooks"]
