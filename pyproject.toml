@@ -7,7 +7,9 @@ authors = [
     { name = "Benoit__Girard", email = "bijeytis@gmail.com" }
 ]
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "setuptools<70",
+]
 
 [project.scripts]
 credexp = "credexp:main"
