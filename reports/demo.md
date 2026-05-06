@@ -1,119 +1,88 @@
-# Demo - Credit Scoring MLOps Project
+# Demo notes - credit scoring service
 
-Ce document sert de guide de démonstration pour la soutenance.
+## Fil rouge
 
-Objectif : montrer rapidement que le projet couvre l'API de scoring, Docker, CI/CD, stockage des prédictions, monitoring technique, drift, optimisation de performance, déploiement distant Hugging Face et stockage distant Supabase.
+- objectif : montrer la chaine complete de serving et de suivi autour du modele
+- ordre naturel : repo -> stack -> API -> stockage -> monitoring -> drift -> perf -> CI/CD
+- deux environnements utiles : local multi-services, remote public plus simple a partager
 
-## 1. Message d'ouverture
+## Ce qui compte dans le repo
 
-Phrase de contexte :
+- artefacts de serving figes dans `artifacts/models/`
+- code d'API dans `src/credexp/serving/`
+- stockage / logging dans `src/credexp/db/`
+- monitoring drift dans `src/credexp/monitoring/`
+- UI dans `streamlit_app/`
+- orchestration locale dans `docker-compose.yml`
+- deploy remote dans `deploy/huggingface/`
+- automatisation dans `.github/workflows/`
 
-```text
-Le projet simule la mise en production d'un modèle de scoring crédit pour l'entreprise fictive Prêt à Dépenser. Le modèle LightGBM a été entraîné, évalué et versionné en Partie 1. En Partie 2, je l'ai intégré dans une stack de déploiement complète avec API, base de données, monitoring, CI/CD et déploiement distant.
-```
-
-Phrase d'architecture :
-
-```text
-J'ai deux déploiements complémentaires. En local, Docker Compose lance la stack complète avec FastAPI, PostgreSQL, Streamlit, Prometheus et Grafana. En remote, Hugging Face Spaces lance un conteneur unique avec Nginx, Streamlit et FastAPI. Le modèle est embarqué sous forme d'artefact joblib versionné, et les prédictions sont stockées dans Supabase via une variable secrète DATABASE_URL.
-```
-
-## 2. Architecture à présenter
-
-### Local
-
-```text
-Docker Compose
-  ├── FastAPI
-  ├── PostgreSQL
-  ├── Streamlit
-  ├── Prometheus
-  └── Grafana
-```
-
-### Remote
-
-```text
-Hugging Face Docker Space
-  ├── Nginx : 7860
-  ├── Streamlit : /
-  ├── FastAPI : /api
-  ├── modèle joblib embarqué
-  └── Supabase PostgreSQL
-```
-
-### Artefacts modèle
-
-```text
-artifacts/models/
-  pipeline.joblib
-  threshold.json
-  feature_columns.json
-```
-
-Phrase :
-
-```text
-MLflow reste utilisé pour le tracking et le registry pendant l'entraînement. Pour le déploiement, j'embarque les artefacts minimaux nécessaires afin d'obtenir un conteneur autonome et reproductible.
-```
-
-## 3. Git et GitHub
-
-Commandes locales :
+Commandes :
 
 ```powershell
-git status
 git branch --show-current
 git log --oneline --decorate --graph -15
 ```
 
-À montrer :
-
-- branche `develop` ;
-- commits explicites ;
-- dépôt public GitHub ;
-- historique de versions.
-
-Screenshot associé :
+Captures utiles :
 
 ```text
 reports/screenshots/01_github_history.png
-```
-
-## 4. GitHub Actions
-
-Page GitHub :
-
-```text
-Repository -> Actions
-```
-
-À montrer :
-
-- workflow `ci` ;
-- workflow `deploy-huggingface` ;
-- jobs verts ;
-- tests ;
-- coverage ;
-- build Docker ;
-- déploiement Hugging Face.
-
-Screenshots associés :
-
-```text
 reports/screenshots/02_github_actions_success.png
 reports/screenshots/17_github_action_deploy_hf_success.png
 ```
 
-Phrase :
+## Architecture retenue
+
+Local :
 
 ```text
-Le workflow CI vérifie le lint, le format, les tests avec coverage et le build Docker. Le workflow de déploiement Hugging Face relance les contrôles qualité, construit l'image du Space et déploie uniquement si tout passe.
+Docker Compose
+  |- FastAPI
+  |- PostgreSQL
+  |- Streamlit
+  |- Prometheus
+  `- Grafana
 ```
 
-## 5. Stack locale Docker Compose
+Remote :
 
-Commande :
+```text
+Hugging Face Docker Space
+  |- Nginx : 7860
+  |- Streamlit : /
+  |- FastAPI : /api
+  `- Supabase PostgreSQL
+```
+
+Choix retenus :
+
+- stack locale complete pour valider les integrations
+- stack remote volontairement compacte pour un deploy simple
+- MLflow garde la partie train / registry
+- le deploy embarque un export joblib autonome
+
+## Artefacts de serving
+
+```text
+artifacts/models/pipeline.joblib
+artifacts/models/threshold.json
+artifacts/models/feature_columns.json
+```
+
+Pourquoi ce format :
+
+- pas de dependance runtime a MLflow
+- image Docker reproductible
+- chargement simple au startup
+- ordre des features fige explicitement
+
+Limite assumee :
+
+- duplication entre registry et export de serving
+- acceptable ici car l'objectif principal est la robustesse de deploiement
+
+## Lancement local
 
 ```powershell
 docker compose down -v
@@ -132,21 +101,20 @@ credexp_prometheus
 credexp_grafana
 ```
 
-Phrase :
+Point de controle :
 
-```text
-Docker Compose orchestre la stack locale complète. C'est le mode de démonstration le plus proche d'une architecture production-like multi-services.
-```
+- la stack donne tout le circuit en local, y compris le stockage et le monitoring
 
-## 6. API FastAPI locale
+## API
 
-Swagger local :
+Docs :
 
 ```text
 http://127.0.0.1:8000/docs
+https://bijeytis-prjperso-credexp.hf.space/api/docs
 ```
 
-Endpoints :
+Routes a verifier :
 
 ```text
 GET  /health
@@ -156,26 +124,11 @@ POST /predict_batch
 GET  /metrics
 ```
 
-Healthcheck :
+Commandes :
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/health
 ```
-
-Payload type :
-
-```json
-{
-  "sk_id_curr": 123456,
-  "features": {
-    "EXT_SOURCE_1": 0.52,
-    "EXT_SOURCE_2": 0.71,
-    "EXT_SOURCE_3": 0.41
-  }
-}
-```
-
-Prédiction PowerShell :
 
 ```powershell
 $body = @{
@@ -186,164 +139,75 @@ $body = @{
     EXT_SOURCE_3 = 0.41
   }
 } | ConvertTo-Json -Depth 5
-
-Invoke-RestMethod `
-  -Method Post `
-  -Uri "http://127.0.0.1:8000/predict" `
-  -ContentType "application/json" `
-  -Body $body
 ```
 
-Screenshots associés :
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/predict" -ContentType "application/json" -Body $body
+Invoke-RestMethod -Method Post -Uri "https://bijeytis-prjperso-credexp.hf.space/api/predict" -ContentType "application/json" -Body $body
+```
+
+Notes :
+
+- modele charge une seule fois au startup
+- validation Pydantic stricte
+- endpoint batch garde du sens pour la perf
+- logging base en best effort pour ne pas bloquer le scoring
+
+Captures :
 
 ```text
 reports/screenshots/03_fastapi_docs.png
 reports/screenshots/04_fastapi_predict_response.png
-```
-
-Phrase :
-
-```text
-Le modèle est chargé une seule fois au démarrage de l'API et réutilisé pour toutes les requêtes. Cela évite de recharger le modèle à chaque appel et réduit la latence.
-```
-
-## 7. API Hugging Face remote
-
-URL du Space :
-
-```text
-https://bijeytis-prjperso-credexp.hf.space
-```
-
-Swagger distant :
-
-```text
-https://bijeytis-prjperso-credexp.hf.space/api/docs
-```
-
-Healthcheck distant :
-
-```text
-https://bijeytis-prjperso-credexp.hf.space/api/health
-```
-
-Routes :
-
-```text
-/              -> Streamlit
-/api/health    -> FastAPI healthcheck
-/api/docs      -> Swagger API
-/api/predict   -> prédiction
-/api/metrics   -> métriques Prometheus exposées par FastAPI
-```
-
-À montrer :
-
-1. ouvrir le Space ;
-2. ouvrir `/api/docs` ;
-3. tester `/api/health` ;
-4. tester `/api/predict` ;
-5. vérifier que la prédiction est stockée dans Supabase.
-
-Screenshots associés :
-
-```text
-reports/screenshots/15_huggingface_space_streamlit.png
 reports/screenshots/16_huggingface_space_api_docs.png
 ```
 
-Phrase :
+## Stockage des predictions
 
-```text
-Le Space Hugging Face utilise un seul conteneur. Nginx route la racine vers Streamlit et le préfixe /api vers FastAPI.
-```
-
-## 8. PostgreSQL local
-
-Initialisation :
+Initialisation locale :
 
 ```powershell
 $env:DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5432/credexp"
 uv run python scripts/init_db.py
 ```
 
-Vérification table :
+Verification :
 
 ```powershell
 docker exec -it credexp_db psql -U postgres -d credexp -c "\dt"
-```
-
-Vérification données :
-
-```powershell
 docker exec -it credexp_db psql -U postgres -d credexp -c "SELECT created_at, sk_id_curr, model_version, proba_default, decision, latency_ms FROM predictions ORDER BY created_at DESC LIMIT 10;"
 ```
 
-Générer plusieurs prédictions :
+Trafic de test :
 
 ```powershell
 1..50 | ForEach-Object { .\api_examples\test_api.ps1 }
 ```
 
-Screenshot associé :
+Pourquoi stocker autant :
+
+- audit d'une prediction
+- base pour le drift
+- lecture rapide des latences et decisions
+- meme schema local / remote
+
+Limite assumee :
+
+- payload complet en base = pratique pour un PoC, a durcir ensuite selon volumetrie et RGPD
+
+Captures :
 
 ```text
 reports/screenshots/07_postgres_predictions.png
-```
-
-Phrase :
-
-```text
-Chaque prédiction est stockée avec l'entrée, la sortie, la version du modèle, le score, la décision et la latence. Cela permet l'audit, le monitoring et le drift.
-```
-
-## 9. Supabase remote
-
-Supabase est utilisé comme PostgreSQL distant.
-
-Secret utilisé :
-
-```text
-DATABASE_URL
-```
-
-Format :
-
-```text
-postgresql+psycopg://USER:PASSWORD@HOST:PORT/postgres?sslmode=require
-```
-
-À montrer :
-
-- Supabase ;
-- Table Editor ;
-- table `predictions` ;
-- ligne générée par le Space Hugging Face.
-
-Screenshots associés :
-
-```text
 reports/screenshots/14_supabase_predictions.png
 reports/screenshots/19_supabase_prediction_from_hf.png
 ```
 
-Phrase :
+## Interface Streamlit
 
-```text
-Le code applicatif reste le même entre PostgreSQL local et Supabase. Seule la variable DATABASE_URL change.
-```
-
-## 10. Streamlit
-
-URL locale :
+URLs :
 
 ```text
 http://127.0.0.1:8501
-```
-
-URL remote :
-
-```text
 https://bijeytis-prjperso-credexp.hf.space
 ```
 
@@ -352,17 +216,13 @@ Pages :
 - `Scoring Client`
 - `Monitoring Dev`
 
-À montrer :
+Utilite reelle :
 
-- payload JSON éditable ;
-- score ;
-- décision ;
-- latence ;
-- dernières prédictions ;
-- distribution des scores ;
-- distribution des décisions.
+- point d'entree simple pour tester le scoring
+- vue legere sur les predictions recemment stockees
+- lecture plus metier que Grafana
 
-Screenshots associés :
+Captures :
 
 ```text
 reports/screenshots/05_streamlit_scoring.png
@@ -370,88 +230,47 @@ reports/screenshots/06_streamlit_monitoring.png
 reports/screenshots/15_huggingface_space_streamlit.png
 ```
 
-## 11. Prometheus
+## Monitoring technique
 
-URL :
+Prometheus :
 
 ```text
 http://127.0.0.1:9090/targets
 ```
 
-Repère :
-
-```text
-credexp_api    UP
-```
-
-PromQL utiles :
+PromQL :
 
 ```promql
 http_requests_total
-```
-
-```promql
 sum(rate(http_requests_total[1m]))
 ```
 
-Screenshot associé :
-
-```text
-reports/screenshots/08_prometheus_target_up.png
-```
-
-Phrase :
-
-```text
-Prometheus scrape les métriques exposées par FastAPI sur /metrics. Cela permet de suivre l'activité technique de l'API.
-```
-
-## 12. Grafana
-
-URL :
+Grafana :
 
 ```text
 http://127.0.0.1:3000
-```
-
-Identifiants :
-
-```text
 admin / admin
 ```
 
-Datasource :
+Lecture retenue :
+
+- trafic
+- statuts HTTP
+- latence moyenne
+
+Pourquoi garder Grafana en plus de Streamlit :
+
+- Streamlit = lecture fonctionnelle du service
+- Grafana = lecture exploitation / systeme
+
+Captures :
 
 ```text
-http://prometheus:9090
+reports/screenshots/08_prometheus_target_up.png
+reports/screenshots/09_grafana_dashboard.png.png
 ```
 
-Dashboard :
-
-```text
-Credit Scoring API Monitoring
-```
-
-Points de lecture :
-
-- débit de requêtes ;
-- statuts HTTP ;
-- latence moyenne ;
-- total des requêtes.
-
-Screenshot associé :
-
-```text
-reports/screenshots/09_grafana_dashboard.png
-```
-
-Phrase :
-
-```text
-Grafana permet une lecture Dev/Ops des métriques techniques. Streamlit et Grafana ne visent pas le même public : Streamlit est orienté métier, Grafana est orienté exploitation.
-```
-
-## 13. Drift Evidently
+## Drift
 
 Commande :
 
@@ -468,52 +287,23 @@ reports/monitoring/evidently_drift_meta.json
 notebooks/06_drift_monitoring.ipynb
 ```
 
-Screenshot associé :
+Lecture :
+
+- reference = donnees de dev stabilisees
+- current = fenetre extraite des predictions stockees
+- interpretation surtout qualitative si faible volume
+
+Limite assumee :
+
+- sans labels recents, on suit surtout la derive de donnees et les signaux techniques
+
+Capture :
 
 ```text
 reports/screenshots/10_evidently_drift_report.png
 ```
 
-Phrase :
-
-```text
-Le drift compare une référence issue des données de développement à une fenêtre de données de production. Ici, le flux de production est simulé, donc l'interprétation est qualitative, mais l'architecture est celle d'un monitoring réel.
-```
-
-## 14. MLflow
-
-Commande locale :
-
-```powershell
-uv run mlflow ui --backend-store-uri sqlite:///mlflow/mlflow.db --default-artifact-root ./mlflow/artifacts
-```
-
-URL :
-
-```text
-http://127.0.0.1:5000
-```
-
-À montrer :
-
-- expérience ;
-- runs ;
-- modèle `credit_scoring_model` ;
-- version retenue.
-
-Screenshot associé :
-
-```text
-reports/screenshots/11_mlflow_registry_model_v2.png
-```
-
-Phrase :
-
-```text
-MLflow a été utilisé pour le tracking, la comparaison des modèles et le registry. Le déploiement utilise ensuite un export joblib minimal afin d'avoir une image Docker autonome.
-```
-
-## 15. Performance
+## Performance
 
 Commandes :
 
@@ -524,7 +314,7 @@ uv run python scripts/benchmark_batching.py
 uv run python scripts/benchmark_onnx.py
 ```
 
-Artifacts :
+Sorties a ouvrir :
 
 ```text
 reports/performance/cprofile_inference_top20.txt
@@ -532,194 +322,71 @@ reports/performance/inference_benchmark.json
 reports/performance/api_benchmark.json
 reports/performance/batching_benchmark.json
 reports/performance/onnx_benchmark.json
-```
-
-Notebook :
-
-```text
 notebooks/07_performance_optimization.ipynb
 ```
 
-Screenshots associés :
+Constats :
+
+- le batching donne le gain le plus concret
+- ONNX valide une piste, mais ne remplace pas a lui seul le preprocessing Python
+- le choix final reste le pipeline sklearn complet pour garder le comportement stable
+
+Captures :
 
 ```text
 reports/screenshots/12_performance_notebook.png
 reports/screenshots/13_onnx_benchmark_json.png
 ```
 
-Phrase :
-
-```text
-Le principal gain pratique vient du batching, qui réduit le coût répété du preprocessing et de la validation. ONNX Runtime a été testé comme PoC sur l'estimateur LightGBM, avec un gain mesurable mais moins structurant que le batching.
-```
-
-## 16. Pytest coverage
-
-Commande :
+## MLflow
 
 ```powershell
-uv run pytest -q
+uv run mlflow ui --backend-store-uri sqlite:///mlflow/mlflow.db --default-artifact-root ./mlflow/artifacts
 ```
 
-Rapports :
+```text
+http://127.0.0.1:5000
+```
+
+Ce que je veux retrouver rapidement :
+
+- runs d'entrainement
+- comparaison des modeles
+- modele `credit_scoring_model`
+- version retenue avant export de serving
+
+Capture :
+
+```text
+reports/screenshots/11_mlflow_registry_model_v2.png
+```
+
+## Qualite et automatisation
+
+```powershell
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest -q
+```
 
 ```text
 reports/coverage/coverage.xml
 reports/coverage/html/
+.github/workflows/ci.yml
+.github/workflows/deploy_huggingface.yml
 ```
 
-Screenshot recommandé :
+Notes :
 
-```text
-reports/screenshots/18_pytest_coverage_report.png
-```
+- couverture volontairement moderee mais explicite
+- cible prioritaire : code de prod et logique critique
+- le workflow CI reste simple et lisible
+- le deploy remote repasse par les controles avant upload
 
-Phrase :
+## Derniers checks utiles
 
-```text
-Les tests génèrent un rapport de couverture. Le seuil minimal est volontairement modéré car le dépôt contient beaucoup de code expérimental, de notebooks et de scripts de training. Les tests ciblent prioritairement les composants critiques de production : API, schémas, IO et logique métier.
-```
-
-## 17. Dockerfiles et workflows
-
-Structure finale :
-
-```text
-docker-compose.yml
-docker/
-  api.Dockerfile
-  prometheus.Dockerfile
-deploy/huggingface/
-  Dockerfile
-.github/workflows/
-  ci.yml
-  deploy_huggingface.yml
-```
-
-Phrase :
-
-```text
-L'image docker/api.Dockerfile sert à la stack locale et au build CI. Le Dockerfile Hugging Face est séparé car le Space doit exposer un seul port public et utilise Nginx pour router / vers Streamlit et /api vers FastAPI. Le Dockerfile Prometheus embarque la configuration Prometheus pour éviter les problèmes de volume local sous Windows.
-```
-
-## 18. Script oral 15 minutes
-
-### 0:00 - 2:00 : contexte
-
-```text
-Je présente la mise en production simulée d'un modèle de scoring crédit. Le modèle LightGBM a été entraîné et versionné en Partie 1, puis déployé et monitoré en Partie 2.
-```
-
-### 2:00 - 4:00 : architecture
-
-Montrer README ou schéma.
-
-```text
-Localement, Docker Compose lance une stack complète. En remote, Hugging Face lance un conteneur unique avec Nginx, Streamlit, FastAPI et connexion Supabase.
-```
-
-### 4:00 - 6:30 : API
-
-Montrer Swagger local ou remote.
-
-```text
-L'API expose /predict et /predict_batch, valide les entrées avec Pydantic et charge le modèle une seule fois au démarrage.
-```
-
-### 6:30 - 8:30 : stockage
-
-Montrer PostgreSQL ou Supabase.
-
-```text
-Chaque prédiction est loggée avec les inputs, outputs, version du modèle, score, décision et latence.
-```
-
-### 8:30 - 10:30 : monitoring
-
-Montrer Streamlit, Prometheus, Grafana.
-
-```text
-Streamlit sert à la démonstration utilisateur et au monitoring simplifié. Prometheus/Grafana servent au monitoring technique.
-```
-
-### 10:30 - 12:00 : drift
-
-Montrer notebook 06 et Evidently.
-
-```text
-Le drift compare les données de production aux données de référence issues du développement.
-```
-
-### 12:00 - 13:30 : performance
-
-Montrer notebook 07.
-
-```text
-Le batching est l'optimisation principale, ONNX est un PoC complémentaire.
-```
-
-### 13:30 - 15:00 : CI/CD et conclusion
-
-Montrer GitHub Actions.
-
-```text
-La CI lance les tests, le coverage, le lint, le build Docker. Le workflow Hugging Face redéploie automatiquement le Space après validation.
-```
-
-## 19. Questions probables
-
-### Pourquoi FastAPI ?
-
-```text
-FastAPI fournit une API performante, typée, documentée automatiquement avec OpenAPI/Swagger, et s'intègre bien à Docker, pytest et au monitoring.
-```
-
-### Pourquoi Streamlit et Grafana ?
-
-```text
-Streamlit vise l'utilisateur métier et la démonstration interactive. Grafana vise le monitoring technique Dev/Ops.
-```
-
-### Pourquoi PostgreSQL / Supabase ?
-
-```text
-Les prédictions sont structurées, requêtables et auditables. Supabase permet de démontrer la même logique avec une base distante managée.
-```
-
-### Pourquoi ne pas charger MLflow directement sur Hugging Face ?
-
-```text
-MLflow est utilisé pour le tracking et le registry pendant l'entraînement. Pour le déploiement, j'embarque les artefacts minimaux afin d'obtenir une image autonome, plus robuste et plus simple à reproduire.
-```
-
-### Pourquoi le coverage n'est pas plus élevé ?
-
-```text
-Le dépôt contient beaucoup de code expérimental, de notebooks et de scripts de training. Les tests ciblent les composants critiques pour la production : API, validation d'entrée, IO et logique métier. Le seuil est volontairement modéré mais explicite.
-```
-
-### Pourquoi ONNX n'est pas l'optimisation principale ?
-
-```text
-ONNX accélère l'inférence du modèle, mais le preprocessing reste dans Python/sklearn. Le batching réduit davantage les surcoûts répétés et constitue l'optimisation la plus impactante dans cette architecture.
-```
-
-### Comment gérer le drift en production réelle ?
-
-```text
-Il faudrait monitorer une fenêtre glissante de prédictions, comparer aux données de référence, déclencher des alertes si les seuils sont dépassés, puis investiguer et éventuellement réentraîner le modèle.
-```
-
-### Que se passe-t-il si Supabase est indisponible ?
-
-```text
-Le logging base est best-effort : l'API continue de renvoyer une prédiction et logge l'erreur. La disponibilité du scoring est donc découplée du stockage.
-```
-
-## 20. Conclusion
-
-Phrase finale :
-
-```text
-Le projet couvre l'ensemble du cycle de vie MLOps attendu : modèle versionné, API, Docker, CI/CD, monitoring, drift, performance, stockage production et déploiement distant. La stack locale est complète et la version distante permet une démonstration publique réaliste avec Hugging Face et Supabase.
-```
+- verifier que le Space repond bien sur `/api/health`
+- garder un payload JSON deja pret
+- garder les captures ouvertes en secours
+- si le remote ralentit, basculer sur la demo locale
+- eviter d'exposer les secrets ou valeurs sensibles a l'ecran
