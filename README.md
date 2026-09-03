@@ -5,6 +5,12 @@ monitored, its drift watched — and, more unusually, its **decision analysed**:
 the published cost is, how uncertain, how much it depends on an assumption nobody
 measured, and how it falls across age and gender.
 
+This is one of two repositories here that serve a tabular model behind an API. This one
+carries the **instrumentation**: Prometheus metrics, a drift module, and the decision
+analysis below. The other, `lab-attrition-serving-api`, carries the **traceability** — a
+schema, a decision log, and a history endpoint. They deliberately do not duplicate each
+other.
+
 ## Project status
 
 **This repository is archived in a runnable state.** The Hugging Face Space, the Supabase
