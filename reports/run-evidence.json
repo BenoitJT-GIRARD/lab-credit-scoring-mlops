@@ -1,7 +1,7 @@
 {
   "command": "uv run python scripts/smoke.py",
   "ran_at": "2026-09-15",
-  "git_revision": "f67bd2a295a4b3d30fdb3b11fe308af8202c8512",
+  "git_revision": "8694b6b287d7d5d6e6d2585c45d513ece6f85111",
   "tool_versions": {
     "python": "3.12.12",
     "lightgbm": "4.6.0",
